@@ -12,6 +12,7 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
 };
 const TUTORIAL = new URLSearchParams(location.search).get('tutorial') === '1';
+const TUT = TUTORIAL;
 
 let audio = null, muted = store.get('craneMuted') === '1';
 function ac() { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); return audio; } catch (_) { return null; } }
@@ -47,6 +48,7 @@ function showOverlay(html) {
   const o = $('overlay'); o.innerHTML = html; o.classList.remove('hidden'); $('ctls').classList.add('hidden');
   o.querySelectorAll('button[data-level]').forEach((b) => { b.onclick = () => start(b.dataset.level); });
   o.querySelectorAll('button[data-again]').forEach((b) => { b.onclick = () => start(level); });
+  o.querySelectorAll('button[data-resume]').forEach((b) => { b.onclick = resumeGame; });
 }
 function hideOverlay() { $('overlay').classList.add('hidden'); $('ctls').classList.remove('hidden'); }
 function showTitle() {
@@ -58,7 +60,7 @@ function showTitle() {
     <div class="lv"><button data-level="easy">쉬움<small>9번 · 잘 잡힘</small></button><button data-level="normal">보통<small>6번 · 잘 미끄러짐</small></button></div>`);
 }
 function start(lv) {
-  level = lv; seedCount++;
+  paused = false; level = lv; seedCount++;
   G = C.newGame(C.rng((Date.now() + seedCount * 7919) >>> 0), { level: lv, tutorial: TUTORIAL });
   floats = []; moved = 0; started = true; hideOverlay();
 }
@@ -93,12 +95,23 @@ addEventListener('keyup', (e) => {
 });
 $('muteBtn').onclick = toggleMute;
 addEventListener('blur', () => { setHold('left', false, 'btnL'); setHold('right', false, 'btnR'); });
+
+// 창이 가려지거나 다른 앱으로 갔다 오면 저절로 멈춘다 (튜토리얼 중에는 멈추지 않음)
+let paused = false;
+function pauseGame() {
+  if (paused || !G || G.over || TUT || !$('overlay').classList.contains('hidden')) return;
+  paused = true; held.left = held.right = false;
+  showOverlay('<h2>⏸ 일시정지</h2><p class="help">돌아오면 이어서 해요</p><button data-resume="1">계속하기</button>');
+}
+function resumeGame() { paused = false; hideOverlay(); lastTs = 0; }
+document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
+addEventListener('blur', pauseGame);
 function fit() { const s = Math.min(innerWidth / W, innerHeight / H); canvas.style.width = `${Math.floor(W * s)}px`; canvas.style.height = `${Math.floor(H * s)}px`; $('wrap').style.width = canvas.style.width; $('wrap').style.height = canvas.style.height; }
 addEventListener('resize', fit); fit();
 
 // ---------- 갱신 ----------
 function update(dt) {
-  if (!G) return;
+  if (!G || paused) return;
   if (!G.over) {
     const d = (held.right ? 1 : 0) - (held.left ? 1 : 0);
     if (d && G.phase === 'move') { const x0 = G.claw.x; C.move(G, d, dt); moved += Math.abs(G.claw.x - x0); if (moved >= 60) { moved = 0; tutorialSignal('move'); } }
